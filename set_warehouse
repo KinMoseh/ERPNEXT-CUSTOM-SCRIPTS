@@ -1,0 +1,60 @@
+/*
+ * File: set_warehouse
+ * Author: Moses Kinyua (Oduktech)
+ * Created: 19/08/2025
+ * Last Modified: 19/08/2025
+ * Description: autamatically sets the packaging warehouse and the finished goods warehouse.
+ *
+ * Copyright ©2025 Oduktech. All rights reserved.
+ */
+
+
+frappe.ui.form.on('Stock Entry', {
+    onload: function(frm) {
+        if (frm.doc.purpose === "Manufacture" && frm.doc.items) {
+            check_and_set_warehouses(frm);
+        }
+    },
+    items_add: function(frm) {
+        if (frm.doc.purpose === "Manufacture" && frm.doc.items) {
+            setTimeout(() => check_and_set_warehouses(frm), 500);
+        }
+    },
+    refresh: function(frm) {
+        if (frm.doc.purpose === "Manufacture" && frm.doc.items) {
+            check_and_set_warehouses(frm);
+        }
+    }
+});
+
+var check_and_set_warehouses = function(frm) {
+    frm.doc.items.forEach(function(item) {
+        if (item.item_code) {
+            frappe.call({
+                method: "frappe.client.get_value",
+                args: {
+                    doctype: "Item",
+                    fieldname: "item_group",
+                    filters: {
+                        "name": item.item_code
+                    }
+                },
+                callback: function(r) {
+                    if (r.message && r.message.item_group) {
+                        const itemGroup = r.message.item_group;
+
+                        // First condition: for Packaging Materials
+                        if (itemGroup === 'Packaging Materials') {
+                            frappe.model.set_value(item.doctype, item.name, 's_warehouse', 'Production WIP - NML');
+                        }
+                        
+                        // Second condition: for Finished Goods-BULK
+                        if (itemGroup === 'Finished Goods-BULK') {
+                            frappe.model.set_value(item.doctype, item.name, 't_warehouse', 'Kumpa Warehouse - NML');
+                        }
+                    }
+                }
+            });
+        }
+    });
+};
