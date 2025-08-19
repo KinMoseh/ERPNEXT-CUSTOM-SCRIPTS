@@ -1,0 +1,80 @@
+/*
+ * File: batch_merge
+ * Author: Moses Kinyua (Oduktech)
+ * Created: 17/08/2025
+ * Last Modified: 17/08/2025
+ * Description: sums QTY in each batch item and adds it to the last:set batch to perform batch merge.
+ *
+ * Copyright ©2025 Oduktech. All rights reserved.
+ */
+
+frappe.ui.form.on('Stock Reconciliation', {
+    before_save: function(frm) {
+        console.log("Stock Reconciliation Client Script: before_save hook triggered for per-item consolidation.");
+
+        let items = frm.doc.items;
+        if (!items || items.length === 0) {
+            frappe.msgprint(__('No items to process.'));
+            return;
+        }
+
+        let item_sums = {};
+        items.forEach(item => {
+            // Use item_code and warehouse for a unique key per item/warehouse combination
+            const key = `${item.item_code}-${item.warehouse}`;
+            const currentQty = flt(item.qty);
+
+            if (item_sums[key]) {
+                item_sums[key].sum += currentQty;
+            } else {
+                item_sums[key] = {
+                    sum: currentQty,
+                    last_row_index: null // We'll find this later
+                };
+            }
+        });
+        
+        console.log("Per-item sums calculated:", item_sums);
+
+        for (let i = items.length - 1; i >= 0; i--) {
+            const item = items[i];
+            const key = `${item.item_code}-${item.warehouse}`;
+            if (item_sums[key].last_row_index === null) {
+                item_sums[key].last_row_index = i;
+            }
+        }
+        
+        console.log("Last row indices identified:", item_sums);
+
+        let has_duplicates = false;
+        items.forEach((item, index) => {
+            const key = `${item.item_code}-${item.warehouse}`;
+            // Check if there are multiple rows for this item
+            const lastIndex = item_sums[key].last_row_index;
+
+            // If this is the last row for this item, set its quantity to the total sum
+            if (index === lastIndex) {
+                // Only modify if there were multiple entries
+                if (item_sums[key].sum !== flt(item.qty)) {
+                    item.qty = item_sums[key].sum;
+                    has_duplicates = true;
+                    console.log(`Updated last row for item ${item.item_code} to total sum: ${item.qty}`);
+                }
+            } else if (item_sums[key].sum > 0) {
+                // If there are other entries for this item, set their quantity to 0
+                item.qty = 0;
+                has_duplicates = true;
+                console.log(`Zeroed out quantity for row ${index+1} of item ${item.item_code}`);
+            }
+        });
+        
+        if (has_duplicates) {
+            frm.refresh_field('items');
+            frappe.msgprint(__('Quantities consolidated by item to the last row. Please review before final submission.'));
+        } else {
+            frappe.msgprint(__('No duplicate items found or no consolidation needed.'));
+        }
+
+        console.log("Client script execution finished.");
+    }
+});
